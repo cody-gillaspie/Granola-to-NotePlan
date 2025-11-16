@@ -14,12 +14,17 @@
       "name": "syncGranolaNotes",
       "description": "Sync notes from Granola AI",
       "jsFunction": "syncGranolaNotes"
+    },
+    {
+      "name": "testAuthHeader",
+      "description": "Test if Authorization headers work in NotePlan",
+      "jsFunction": "testAuthHeader"
     }
   ],
   "plugin.settings": [
     {
       "type": "string",
-      "key": "accessToken",
+      "key": "granolaAccessToken",
       "title": "Granola Access Token",
       "description": "Your Granola API access token (extract from supabase.json file). Leave empty to try auto-detection.",
       "default": ""
@@ -30,13 +35,6 @@
       "title": "Auth Key Path",
       "description": "Path to your Granola authentication key file (relative to home directory) - Note: File reading may not work in NotePlan",
       "default": "Library/Application Support/Granola/supabase.json"
-    },
-    {
-      "type": "string",
-      "key": "syncDirectory",
-      "title": "Sync Directory",
-      "description": "Folder name where separate notes will be created (leave empty for root)",
-      "default": "Granola"
     },
     {
       "type": "boolean",

@@ -2,32 +2,6 @@
 
 A NotePlan plugin that automatically syncs your [Granola AI](https://granola.ai) meeting notes to your NotePlan notes with configurable organization options.
 
-## ⚠️ **IMPORTANT: CURRENTLY NON-FUNCTIONAL**
-
-**This plugin does not currently work due to a limitation in NotePlan's `fetch` implementation.**
-
-### The Issue
-
-NotePlan's `fetch` API does not reliably send custom HTTP headers (specifically `Authorization`, `User-Agent`, and `X-Client-Version`) when making POST requests. The Granola API requires these headers for authentication and client identification.
-
-**What we've verified:**
-- ✅ The plugin code is complete and correct
-- ✅ The access token is valid (verified with curl - returns 200 OK)
-- ✅ Headers are set correctly according to NotePlan's documentation
-- ✅ Tried `credentials: 'include'` option (per fetch API spec) - still doesn't work
-- ✅ Tried `await fetch()` approach (like NotePlan templates use) - still doesn't work
-- ✅ Note: Authorization headers DO work in NotePlan templates with GET requests (see Todoist template examples)
-- ❌ NotePlan's `fetch` does not send the Authorization header for POST requests (returns "Unauthorized")
-- ❌ Granola API requires POST requests, so we cannot use GET as a workaround
-
-**Status:** The plugin is ready to work once NotePlan fixes their `fetch` implementation to properly support custom headers in POST requests.
-
-**Workaround:** None currently available. This requires a fix from NotePlan.
-
-**Reported to:** This issue should be reported to NotePlan support.
-
----
-
 ## 🚀 Features
 
 - **🔄 Manual Sync**: Sync notes from Granola AI on demand via Command Bar
