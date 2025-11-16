@@ -37,14 +37,14 @@ async function loadCredentials() {
       fs = require('fs');
       console.log('Node.js modules loaded successfully');
     } catch (requireError) {
-      console.error('require() not available in NotePlan');
-      console.error('Error:', requireError.message || requireError);
-      console.error('Please add your Granola access token directly in plugin settings.');
-      console.error('To get your token:');
-      console.error('1. Open ~/Library/Application Support/Granola/supabase.json');
-      console.error('2. Find "workos_tokens" or "cognito_tokens"');
-      console.error('3. Extract the "access_token" value');
-      console.error('4. Paste it in the "Granola Access Token" setting');
+      console.log('require() not available in NotePlan');
+      console.log('Error:', requireError.message || requireError);
+      console.log('Please add your Granola access token directly in plugin settings.');
+      console.log('To get your token:');
+      console.log('1. Open ~/Library/Application Support/Granola/supabase.json');
+      console.log('2. Find "workos_tokens" or "cognito_tokens"');
+      console.log('3. Extract the "access_token" value');
+      console.log('4. Paste it in the "Granola Access Token" setting');
       return null;
     }
     
@@ -85,7 +85,7 @@ async function loadCredentials() {
               : data.workos_tokens;
             accessToken = workosTokens.access_token;
           } catch (e) {
-            console.error('Error parsing workos_tokens:', e);
+            console.log('Error parsing workos_tokens:', e);
           }
         }
         
@@ -97,7 +97,7 @@ async function loadCredentials() {
               : data.cognito_tokens;
             accessToken = cognitoTokens.access_token;
           } catch (e) {
-            console.error('Error parsing cognito_tokens:', e);
+            console.log('Error parsing cognito_tokens:', e);
           }
         }
         
@@ -106,106 +106,117 @@ async function loadCredentials() {
           return accessToken;
         }
       } catch (error) {
-        console.error('Error reading credentials from', authPath, ':', error);
+        console.log('Error reading credentials from', authPath, ':', error);
         continue;
       }
     }
 
-    console.error('No valid credentials found in any of the expected locations');
+    console.log('No valid credentials found in any of the expected locations');
     return null;
   } catch (error) {
-    console.error('Error in loadCredentials:', error);
-    console.error('Error stack:', error.stack);
+    console.log('Error in loadCredentials:', error);
+    console.log('Error stack:', error.stack);
     return null;
   }
 }
 
 // Fetch documents from Granola API
-async function fetchGranolaDocuments(token) {
-  try {
-    console.log('Making API request to Granola...');
-    console.log('Token exists: ' + (!!token));
-    console.log('Token length: ' + (token ? token.length : 0));
-    console.log('Token starts with: ' + (token ? token.substring(0, 20) : 'none'));
-    
-    const requestBody = {
-      limit: 100,
-      offset: 0,
-      include_last_viewed_panel: true
-    };
-    
-    const authHeader = 'Bearer ' + token;
-    console.log('Authorization header length: ' + authHeader.length);
-    console.log('Authorization header preview: ' + authHeader.substring(0, 30) + '...');
-    
-    console.log('Calling fetch...');
-    
-    // Granola API requires specific headers for client identification
-    // "Unsupported client" means Authorization works but client headers are missing/wrong
-    // Include all required headers from the start
-    const headers = {
-      'Authorization': authHeader,
-      'Content-Type': 'application/json',
-      'Accept': '*/*',
-      'User-Agent': 'Granola/5.354.0',
-      'X-Client-Version': '5.354.0'
-    };
-    
-    console.log('Making request with all required headers (Authorization, User-Agent, X-Client-Version)...');
-    console.log('Header keys: ' + Object.keys(headers).join(', '));
-    
-    let response;
-    try {
-      // Use fetch with all headers - matching NotePlan docs format
-      // Try with credentials: "include" to ensure Authorization header is sent for cross-origin requests
-      // According to fetch API docs, credentials controls cookies and HTTP-Authorization headers
-      response = await fetch('https://api.granola.ai/v2/get-documents', {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(requestBody),
-        credentials: 'include', // Ensure credentials (including Authorization) are sent for cross-origin
-        mode: 'cors' // Explicitly set CORS mode (default, but being explicit)
-      });
-      
-      // Check response for errors
-      if (typeof response === 'string') {
-        try {
-          const parsedResponse = JSON.parse(response);
-          if (parsedResponse.message) {
-            const errorMsg = parsedResponse.message;
-            console.error('API returned error message: ' + errorMsg);
-            
-            if (errorMsg === 'Unsupported client') {
-              console.error('This means Authorization header IS being sent, but User-Agent/X-Client-Version headers are not.');
-              console.error('NotePlan fetch limitation: Custom headers beyond Authorization/Content-Type may not be sent.');
-              throw new Error('API error: Unsupported client - NotePlan fetch may not support User-Agent/X-Client-Version headers.');
-            } else if (errorMsg === 'Unauthorized') {
-              console.error('This means the Authorization header may not be sent correctly, or the token is invalid/expired.');
-              console.error('Please verify:');
-              console.error('1. The token in settings matches the one in supabase.json');
-              console.error('2. The token has not expired');
-              console.error('3. You are logged into Granola desktop app');
-              throw new Error('API error: Unauthorized - Authorization header may not be sent correctly by NotePlan fetch, or token is invalid.');
-            } else {
-              throw new Error('API error: ' + errorMsg);
-            }
-          }
-        } catch (parseError) {
-          // If it's our thrown error, re-throw it
-          if (parseError.message && parseError.message.startsWith('API error:')) {
-            throw parseError;
-          }
-          // Not JSON or different structure, continue to process
-          console.log('Response is not JSON error, continuing...');
-        }
-      }
-    } catch (fetchError) {
-      console.error('Fetch error: ' + fetchError.message);
-      throw fetchError;
-    }
-
-    console.log('Fetch completed');
+function fetchGranolaDocuments(token) {
+  console.log('Making API request to Granola...');
+  console.log('Token exists: ' + (!!token));
+  console.log('Token length: ' + (token ? token.length : 0));
+  console.log('Token starts with: ' + (token ? token.substring(0, 20) : 'none'));
+  
+  const requestBody = {
+    limit: 100,
+    offset: 0,
+    include_last_viewed_panel: true
+  };
+  
+  const authHeader = 'Bearer ' + token;
+  console.log('Authorization header length: ' + authHeader.length);
+  console.log('Authorization header preview: ' + authHeader.substring(0, 30) + '...');
+  
+  console.log('Calling fetch...');
+  
+  // Granola API requires specific headers for client identification
+  // "Unsupported client" means Authorization works but client headers are missing/wrong
+  // Include all required headers from the start
+  const headers = {
+    'Authorization': authHeader,
+    'Content-Type': 'application/json',
+    'Accept': '*/*',
+    'User-Agent': 'Granola/5.354.0',
+    'X-Client-Version': '5.354.0'
+  };
+  
+  console.log('Making request with all required headers (Authorization, User-Agent, X-Client-Version)...');
+  console.log('Header keys: ' + Object.keys(headers).join(', '));
+  
+  // Use NotePlan's recommended promise-based approach
+  // According to NotePlan docs: "Don't use const re = await fetch(), because you can't catch errors this way"
+  // NotePlan fetch only supports: timeout, method, headers, body
+  console.log('Calling fetch with promise chain...');
+  
+  return fetch('https://api.granola.ai/v2/get-documents', {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(requestBody)
+  })
+  .then(response => {
+    console.log('Fetch .then() callback called');
     console.log('Response type: ' + typeof response);
+    
+    // Check response for errors
+    if (typeof response === 'string') {
+      try {
+        const parsedResponse = JSON.parse(response);
+        if (parsedResponse.message) {
+          const errorMsg = parsedResponse.message;
+          console.log('ERROR: API returned error message: ' + errorMsg);
+          
+          if (errorMsg === 'Unsupported client') {
+            console.log('ERROR: This means Authorization header IS being sent, but User-Agent/X-Client-Version headers are not.');
+            console.log('ERROR: NotePlan fetch limitation: Custom headers beyond Authorization/Content-Type may not be sent.');
+            throw new Error('API error: Unsupported client - NotePlan fetch may not support User-Agent/X-Client-Version headers.');
+          } else if (errorMsg === 'Unauthorized') {
+            console.log('ERROR: This means the Authorization header may not be sent correctly, or the token is invalid/expired.');
+            console.log('ERROR: Please verify:');
+            console.log('ERROR: 1. The token in settings matches the one in supabase.json');
+            console.log('ERROR: 2. The token has not expired');
+            console.log('ERROR: 3. You are logged into Granola desktop app');
+            throw new Error('API error: Unauthorized - Authorization header may not be sent correctly by NotePlan fetch, or token is invalid.');
+          } else {
+            throw new Error('API error: ' + errorMsg);
+          }
+        }
+        
+        // No error message, process the response
+        return processFetchResponse(response);
+      } catch (parseError) {
+        // If it's our thrown error, re-throw it
+        if (parseError.message && parseError.message.startsWith('API error:')) {
+          throw parseError;
+        }
+        // Not JSON or different structure, continue to process
+        console.log('Response is not JSON error, continuing...');
+        return processFetchResponse(response);
+      }
+    } else {
+      return processFetchResponse(response);
+    }
+  })
+  .catch(error => {
+    console.log('Fetch error caught: ' + (error.message || error));
+    // Return null on error so calling code can handle it gracefully
+    return null;
+  });
+}
+
+// Helper function to process fetch response
+function processFetchResponse(response) {
+  console.log('Processing fetch response...');
+  console.log('Response type: ' + typeof response);
     
     // NotePlan's fetch returns the response body directly as a string
     console.log('Response length: ' + (typeof response === 'string' ? response.length : 'N/A'));
@@ -224,9 +235,9 @@ async function fetchGranolaDocuments(token) {
         throw new Error('Unexpected response type: ' + typeof response);
       }
     } catch (parseError) {
-      console.error('Error parsing response: ' + parseError.message);
-      console.error('Error stack: ' + (parseError.stack || 'No stack'));
-      console.error('Response preview: ' + (typeof response === 'string' ? response.substring(0, 500) : String(response).substring(0, 500)));
+      console.log('Error parsing response: ' + parseError.message);
+      console.log('Error stack: ' + (parseError.stack || 'No stack'));
+      console.log('Response preview: ' + (typeof response === 'string' ? response.substring(0, 500) : String(response).substring(0, 500)));
       throw new Error('Could not parse API response: ' + parseError.message);
     }
     
@@ -236,31 +247,25 @@ async function fetchGranolaDocuments(token) {
     
     // Check for error messages in the response
     if (apiResponse.message) {
-      console.error('API returned error message: ' + apiResponse.message);
-      console.error('This usually means the access token is invalid, expired, or not being sent correctly.');
-      console.error('Please check:');
-      console.error('1. The token in settings matches the one in supabase.json');
-      console.error('2. The token has not expired');
-      console.error('3. You are logged into Granola desktop app');
+      console.log('API returned error message: ' + apiResponse.message);
+      console.log('This usually means the access token is invalid, expired, or not being sent correctly.');
+      console.log('Please check:');
+      console.log('1. The token in settings matches the one in supabase.json');
+      console.log('2. The token has not expired');
+      console.log('3. You are logged into Granola desktop app');
       throw new Error('API error: ' + apiResponse.message);
     }
     
     if (!apiResponse || !apiResponse.docs) {
-      console.error('API response format is unexpected');
+      console.log('API response format is unexpected');
       const responseStr = JSON.stringify(apiResponse);
-      console.error('Response preview: ' + responseStr.substring(0, 500));
+      console.log('Response preview: ' + responseStr.substring(0, 500));
       return null;
     }
     
     const docCount = apiResponse.docs.length;
     console.log('Found ' + docCount + ' documents in API response');
     return apiResponse.docs;
-  } catch (error) {
-    console.error('Error fetching documents:', error);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    return null;
-  }
 }
 
 // Convert ProseMirror format to Markdown
@@ -467,7 +472,7 @@ function updateDailyNote(todaysNotes) {
     dailyNote.content = content;
     console.log(`Updated daily note with ${todaysNotes.length} meetings`);
   } catch (error) {
-    console.error('Error updating daily note:', error);
+    console.log('Error updating daily note:', error);
   }
 }
 
@@ -483,7 +488,7 @@ async function syncGranolaNotes() {
     console.log('loadCredentials returned:', token ? 'Token found' : 'No token');
     
     if (!token) {
-      console.error('Failed to load credentials');
+      console.log('Failed to load credentials');
       CommandBar.showInput('Granola Sync Error', 'Could not load credentials. Please check your auth key path in settings.', ['OK']);
       return;
     }
@@ -492,7 +497,16 @@ async function syncGranolaNotes() {
     
     // Fetch documents
     const documents = await fetchGranolaDocuments(token);
-    if (!documents || documents.length === 0) {
+    if (!documents) {
+      // Error occurred - fetchGranolaDocuments returns null on error
+      CommandBar.showInput(
+        'Granola Sync Error',
+        'Failed to fetch documents from Granola API. This is a known limitation: NotePlan\'s fetch does not send Authorization headers correctly for POST requests. Please report this issue to NotePlan support.',
+        ['OK']
+      );
+      return;
+    }
+    if (documents.length === 0) {
       CommandBar.showInput('Granola Sync', 'No documents found to sync.', ['OK']);
       return;
     }
@@ -534,7 +548,7 @@ async function syncGranolaNotes() {
           }
         }
       } catch (error) {
-        console.error(`Error processing document ${doc.title || doc.id}:`, error);
+        console.log(`Error processing document ${doc.title || doc.id}:`, error);
       }
     }
     
@@ -552,7 +566,7 @@ async function syncGranolaNotes() {
     
     console.log(`Sync complete: ${syncedCount} notes synced`);
   } catch (error) {
-    console.error('Granola sync failed:', error);
+    console.log('Granola sync failed:', error);
     CommandBar.showInput(
       'Granola Sync Error',
       `Sync failed: ${error.message}`,
