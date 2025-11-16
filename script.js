@@ -121,7 +121,7 @@ async function loadCredentials() {
 }
 
 // Fetch documents from Granola API
-function fetchGranolaDocuments(token) {
+async function fetchGranolaDocuments(token) {
   console.log('Making API request to Granola...');
   console.log('Token exists: ' + (!!token));
   console.log('Token length: ' + (token ? token.length : 0));
@@ -153,22 +153,30 @@ function fetchGranolaDocuments(token) {
   console.log('Making request with all required headers (Authorization, User-Agent, X-Client-Version)...');
   console.log('Header keys: ' + Object.keys(headers).join(', '));
   
-  // Use NotePlan's recommended promise-based approach
-  // According to NotePlan docs: "Don't use const re = await fetch(), because you can't catch errors this way"
-  // NotePlan fetch only supports: timeout, method, headers, body
-  console.log('Calling fetch with promise chain...');
+  // Try using await like in NotePlan templates (templates show Authorization headers work)
+  // NotePlan docs say not to use await for error handling, but templates use it successfully
+  // Maybe plugins can use await too, or maybe POST vs GET makes a difference
+  console.log('Calling fetch with await (like NotePlan templates)...');
   
-  return fetch('https://api.granola.ai/v2/get-documents', {
-    method: 'POST',
-    headers: headers,
-    body: JSON.stringify(requestBody)
-  })
-  .then(response => {
-    console.log('Fetch .then() callback called');
+  try {
+    const response = await fetch('https://api.granola.ai/v2/get-documents', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(requestBody)
+    });
+    
+    console.log('Fetch completed with await');
     console.log('Response type: ' + typeof response);
     
-    // Check response for errors
+    // Check for string error responses (like "Forbidden" in Todoist example)
     if (typeof response === 'string') {
+      // Check if it's an error string
+      if (response === 'Forbidden' || response === 'Unauthorized') {
+        console.log('ERROR: Got error string: ' + response);
+        return null;
+      }
+      
+      // Try to parse as JSON
       try {
         const parsedResponse = JSON.parse(response);
         if (parsedResponse.message) {
@@ -176,41 +184,32 @@ function fetchGranolaDocuments(token) {
           console.log('ERROR: API returned error message: ' + errorMsg);
           
           if (errorMsg === 'Unsupported client') {
-            console.log('ERROR: This means Authorization header IS being sent, but User-Agent/X-Client-Version headers are not.');
-            console.log('ERROR: NotePlan fetch limitation: Custom headers beyond Authorization/Content-Type may not be sent.');
-            throw new Error('API error: Unsupported client - NotePlan fetch may not support User-Agent/X-Client-Version headers.');
+            console.log('ERROR: Authorization header IS being sent, but User-Agent/X-Client-Version headers are not.');
+            return null;
           } else if (errorMsg === 'Unauthorized') {
-            console.log('ERROR: This means the Authorization header may not be sent correctly, or the token is invalid/expired.');
-            console.log('ERROR: Please verify:');
-            console.log('ERROR: 1. The token in settings matches the one in supabase.json');
-            console.log('ERROR: 2. The token has not expired');
-            console.log('ERROR: 3. You are logged into Granola desktop app');
-            throw new Error('API error: Unauthorized - Authorization header may not be sent correctly by NotePlan fetch, or token is invalid.');
+            console.log('ERROR: Authorization header may not be sent correctly by NotePlan fetch for POST requests.');
+            console.log('ERROR: Note: Templates use GET requests which may work differently.');
+            return null;
           } else {
-            throw new Error('API error: ' + errorMsg);
+            console.log('ERROR: API error: ' + errorMsg);
+            return null;
           }
         }
         
         // No error message, process the response
         return processFetchResponse(response);
       } catch (parseError) {
-        // If it's our thrown error, re-throw it
-        if (parseError.message && parseError.message.startsWith('API error:')) {
-          throw parseError;
-        }
-        // Not JSON or different structure, continue to process
-        console.log('Response is not JSON error, continuing...');
+        // Not JSON, try to process as-is
+        console.log('Response is not JSON, processing as string...');
         return processFetchResponse(response);
       }
     } else {
       return processFetchResponse(response);
     }
-  })
-  .catch(error => {
-    console.log('Fetch error caught: ' + (error.message || error));
-    // Return null on error so calling code can handle it gracefully
+  } catch (error) {
+    console.log('Fetch error: ' + (error.message || error));
     return null;
-  });
+  }
 }
 
 // Helper function to process fetch response

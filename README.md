@@ -15,7 +15,10 @@ NotePlan's `fetch` API does not reliably send custom HTTP headers (specifically 
 - ✅ The access token is valid (verified with curl - returns 200 OK)
 - ✅ Headers are set correctly according to NotePlan's documentation
 - ✅ Tried `credentials: 'include'` option (per fetch API spec) - still doesn't work
-- ❌ NotePlan's `fetch` does not send the Authorization header for cross-origin POST requests (returns "Unauthorized")
+- ✅ Tried `await fetch()` approach (like NotePlan templates use) - still doesn't work
+- ✅ Note: Authorization headers DO work in NotePlan templates with GET requests (see Todoist template examples)
+- ❌ NotePlan's `fetch` does not send the Authorization header for POST requests (returns "Unauthorized")
+- ❌ Granola API requires POST requests, so we cannot use GET as a workaround
 
 **Status:** The plugin is ready to work once NotePlan fixes their `fetch` implementation to properly support custom headers in POST requests.
 
