@@ -1,0 +1,64 @@
+{
+  "noteplan.minAppVersion": "3.0.21",
+  "macOS.minVersion": "10.15.7",
+  "iOS.minVersion": "14",
+  "plugin.id": "granola.sync",
+  "plugin.name": "Granola Sync",
+  "plugin.description": "Automatically syncs Granola AI meeting notes into NotePlan",
+  "plugin.author": "Danny McClelland",
+  "plugin.url": "https://github.com/dannymcc/Granola-to-NotePlan",
+  "plugin.version": "1.0.0",
+  "plugin.script": "script.js",
+  "plugin.commands": [
+    {
+      "name": "syncGranolaNotes",
+      "description": "Sync notes from Granola AI",
+      "jsFunction": "syncGranolaNotes"
+    }
+  ],
+  "plugin.settings": [
+    {
+      "type": "string",
+      "key": "accessToken",
+      "title": "Granola Access Token",
+      "description": "Your Granola API access token (extract from supabase.json file). Leave empty to try auto-detection.",
+      "default": ""
+    },
+    {
+      "type": "string",
+      "key": "authKeyPath",
+      "title": "Auth Key Path",
+      "description": "Path to your Granola authentication key file (relative to home directory) - Note: File reading may not work in NotePlan",
+      "default": "Library/Application Support/Granola/supabase.json"
+    },
+    {
+      "type": "string",
+      "key": "syncDirectory",
+      "title": "Sync Directory",
+      "description": "Folder name where separate notes will be created (leave empty for root)",
+      "default": "Granola"
+    },
+    {
+      "type": "boolean",
+      "key": "enableDailyNoteIntegration",
+      "title": "Enable Daily Note Integration",
+      "description": "Add today's meetings to your daily note",
+      "default": true
+    },
+    {
+      "type": "string",
+      "key": "dailyNoteSectionName",
+      "title": "Daily Note Section Heading",
+      "description": "Section heading for meetings in daily notes",
+      "default": "## Granola Meetings"
+    },
+    {
+      "type": "boolean",
+      "key": "createSeparateNotes",
+      "title": "Create Separate Notes",
+      "description": "Create individual notes for each meeting (in addition to daily note integration)",
+      "default": true
+    }
+  ]
+}
+
