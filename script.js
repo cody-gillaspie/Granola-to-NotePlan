@@ -157,10 +157,14 @@ async function fetchGranolaDocuments(token) {
     let response;
     try {
       // Use fetch with all headers - matching NotePlan docs format
+      // Try with credentials: "include" to ensure Authorization header is sent for cross-origin requests
+      // According to fetch API docs, credentials controls cookies and HTTP-Authorization headers
       response = await fetch('https://api.granola.ai/v2/get-documents', {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        credentials: 'include', // Ensure credentials (including Authorization) are sent for cross-origin
+        mode: 'cors' // Explicitly set CORS mode (default, but being explicit)
       });
       
       // Check response for errors

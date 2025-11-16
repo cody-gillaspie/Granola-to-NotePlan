@@ -14,7 +14,8 @@ NotePlan's `fetch` API does not reliably send custom HTTP headers (specifically 
 - ✅ The plugin code is complete and correct
 - ✅ The access token is valid (verified with curl - returns 200 OK)
 - ✅ Headers are set correctly according to NotePlan's documentation
-- ❌ NotePlan's `fetch` does not send the headers reliably (returns "Unauthorized" or "Unsupported client")
+- ✅ Tried `credentials: 'include'` option (per fetch API spec) - still doesn't work
+- ❌ NotePlan's `fetch` does not send the Authorization header for cross-origin POST requests (returns "Unauthorized")
 
 **Status:** The plugin is ready to work once NotePlan fixes their `fetch` implementation to properly support custom headers in POST requests.
 
