@@ -686,13 +686,21 @@ async function runSync(syncAll) {
     var limit = syncAll ? null : parseInt(settings.documentSyncLimit) || 100;
     console.log('Granola Sync: Starting sync' + (syncAll ? ' (all historical)' : ' (limit: ' + limit + ')') + '...');
 
+    // Move heavy work to async thread so UI stays responsive
+    await CommandBar.onAsyncThread();
+
     // Fetch documents
+    CommandBar.showLoading(true, 'Fetching documents from Granola...');
     var documents = await fetchDocuments(token, limit);
     if (!documents) {
+      CommandBar.showLoading(false);
+      await CommandBar.onMainThread();
       await CommandBar.prompt('Granola Sync Error', 'Failed to fetch documents from Granola. Check your access token.');
       return;
     }
     if (documents.length === 0) {
+      CommandBar.showLoading(false);
+      await CommandBar.onMainThread();
       await CommandBar.prompt('Granola Sync', 'No documents found in Granola.');
       return;
     }
@@ -702,6 +710,7 @@ async function runSync(syncAll) {
     // Fetch folders if needed
     var folderMap = null;
     if (settings.enableGranolaFolders) {
+      CommandBar.showLoading(true, 'Fetching Granola folders...');
       var folders = await fetchFolders(token);
       if (folders) {
         folderMap = {};
@@ -725,6 +734,9 @@ async function runSync(syncAll) {
 
     for (var i = 0; i < documents.length; i++) {
       var doc = documents[i];
+      var progress = (i + 1) / documents.length;
+      CommandBar.showLoading(true, 'Processing ' + (i + 1) + '/' + documents.length + ': ' + (doc.title || 'Untitled'), progress);
+
       try {
         // Fetch transcript if enabled
         var transcript = null;
@@ -744,7 +756,11 @@ async function runSync(syncAll) {
         }
 
         var content = buildNoteContent(doc, settings, transcript);
+
+        // Return to main thread for DataStore operations
+        await CommandBar.onMainThread();
         var result = createOrUpdateNote(doc, content, settings, folderMap);
+        await CommandBar.onAsyncThread();
 
         if (!result) {
           failed++;
@@ -774,6 +790,11 @@ async function runSync(syncAll) {
       }
     }
 
+    CommandBar.showLoading(false);
+
+    // Return to main thread for UI and DataStore operations
+    await CommandBar.onMainThread();
+
     // Update daily note
     updateDailyNote(todaysNotes, settings);
 
@@ -789,6 +810,8 @@ async function runSync(syncAll) {
     await CommandBar.prompt('Granola Sync Complete', summary);
 
   } catch (error) {
+    CommandBar.showLoading(false);
+    try { await CommandBar.onMainThread(); } catch (e) { /* already on main */ }
     console.log('Granola Sync: Sync failed — ' + (error.message || error));
     await CommandBar.prompt('Granola Sync Error', 'Sync failed: ' + (error.message || error));
   }
