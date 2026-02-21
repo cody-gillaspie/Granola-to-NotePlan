@@ -4,43 +4,138 @@
   "iOS.minVersion": "14",
   "plugin.id": "granola.sync",
   "plugin.name": "Granola Sync",
-  "plugin.description": "Automatically syncs Granola AI meeting notes into NotePlan",
+  "plugin.description": "Syncs Granola AI meeting notes into NotePlan with configurable content sections, attendee tags, and daily note integration",
   "plugin.author": "Danny McClelland",
   "plugin.url": "https://github.com/dannymcc/Granola-to-NotePlan",
-  "plugin.version": "1.0.0",
+  "plugin.version": "2.0.0",
   "plugin.script": "script.js",
   "plugin.commands": [
     {
       "name": "syncGranolaNotes",
-      "description": "Sync notes from Granola AI",
+      "description": "Sync recent notes from Granola AI",
       "jsFunction": "syncGranolaNotes"
     },
     {
-      "name": "testAuthHeader",
-      "description": "Test if Authorization headers work in NotePlan",
-      "jsFunction": "testAuthHeader"
+      "name": "syncGranolaNotesAll",
+      "description": "Sync ALL historical notes from Granola AI (ignores sync limit)",
+      "jsFunction": "syncGranolaNotesAll"
     }
   ],
   "plugin.settings": [
     {
+      "type": "heading",
+      "title": "Authentication"
+    },
+    {
       "type": "string",
       "key": "granolaAccessToken",
       "title": "Granola Access Token",
-      "description": "Your Granola API access token (extract from supabase.json file). Leave empty to try auto-detection.",
-      "default": ""
+      "description": "Your Granola API access token. To find it: open ~/Library/Application Support/Granola/supabase.json, find workos_tokens (or cognito_tokens), and copy the access_token value.",
+      "default": "",
+      "required": true
+    },
+    {
+      "type": "heading",
+      "title": "Sync Settings"
     },
     {
       "type": "string",
-      "key": "authKeyPath",
-      "title": "Auth Key Path",
-      "description": "Path to your Granola authentication key file (relative to home directory) - Note: File reading may not work in NotePlan",
-      "default": "Library/Application Support/Granola/supabase.json"
+      "key": "syncFolder",
+      "title": "Sync Folder",
+      "description": "NotePlan folder where synced notes are created",
+      "default": "Granola"
     },
     {
-      "type": "boolean",
+      "type": "string",
+      "key": "filenameTemplate",
+      "title": "Filename Template",
+      "description": "Template for note filenames. Tokens: {title}, {id}, {created_date}, {updated_date}, {created_time}, {updated_time}, {created_datetime}, {updated_datetime}",
+      "default": "{created_date}_{title}"
+    },
+    {
+      "type": "string",
+      "key": "dateFormat",
+      "title": "Date Format",
+      "description": "Date format for filenames. Use YYYY (year), MM (month), DD (day), HH (hour), mm (minute), ss (second)",
+      "default": "YYYY-MM-DD"
+    },
+    {
+      "type": "string",
+      "key": "documentSyncLimit",
+      "title": "Document Sync Limit",
+      "description": "Maximum number of documents to sync per run (used by the standard sync command)",
+      "default": "100"
+    },
+    {
+      "type": "bool",
+      "key": "skipExistingNotes",
+      "title": "Skip Existing Notes",
+      "description": "Skip notes that already exist in NotePlan (matched by Granola ID). When disabled, existing notes are updated if the Granola version is newer.",
+      "default": true
+    },
+    {
+      "type": "heading",
+      "title": "Note Content"
+    },
+    {
+      "type": "bool",
+      "key": "includeMyNotes",
+      "title": "Include My Notes",
+      "description": "Include your personal notes from Granola in a '## My Notes' section",
+      "default": true
+    },
+    {
+      "type": "bool",
+      "key": "includeEnhancedNotes",
+      "title": "Include Enhanced Notes",
+      "description": "Include AI-generated enhanced notes from Granola in a '## Enhanced Notes' section",
+      "default": true
+    },
+    {
+      "type": "bool",
+      "key": "includeTranscript",
+      "title": "Include Transcript",
+      "description": "Include the full meeting transcript (requires an extra API call per note, may slow down sync)",
+      "default": false
+    },
+    {
+      "type": "heading",
+      "title": "Attendee Tags"
+    },
+    {
+      "type": "bool",
+      "key": "includeAttendeeTags",
+      "title": "Include Attendee Tags",
+      "description": "Add meeting attendees as #hashtags at the top of each note",
+      "default": false
+    },
+    {
+      "type": "string",
+      "key": "excludeMyName",
+      "title": "Exclude My Name",
+      "description": "Your name as it appears in Granola meetings (excluded from attendee tags). Leave empty to include everyone.",
+      "default": ""
+    },
+    {
+      "type": "heading",
+      "title": "Folder Organisation"
+    },
+    {
+      "type": "bool",
+      "key": "enableGranolaFolders",
+      "title": "Mirror Granola Folders",
+      "description": "Organise notes into subfolders matching your Granola folder structure (e.g. Granola/Work, Granola/Personal)",
+      "default": false
+    },
+    {
+      "type": "heading",
+      "title": "Daily Note Integration"
+    },
+    {
+      "type": "bool",
       "key": "enableDailyNoteIntegration",
       "title": "Enable Daily Note Integration",
-      "description": "Add today's meetings to your daily note",
+      "description": "Add today's synced meetings to your daily note with times and wiki-links",
       "default": true
     },
     {
@@ -49,14 +144,6 @@
       "title": "Daily Note Section Heading",
       "description": "Section heading for meetings in daily notes",
       "default": "## Granola Meetings"
-    },
-    {
-      "type": "boolean",
-      "key": "createSeparateNotes",
-      "title": "Create Separate Notes",
-      "description": "Create individual notes for each meeting (in addition to daily note integration)",
-      "default": true
     }
   ]
 }
-
