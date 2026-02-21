@@ -3,7 +3,7 @@
   "macOS.minVersion": "10.15.7",
   "iOS.minVersion": "14",
   "plugin.id": "granola.sync",
-  "plugin.name": "Granola Sync",
+  "plugin.name": "🥣 Granola Sync",
   "plugin.description": "Syncs Granola AI meeting notes into NotePlan with configurable content sections, attendee tags, and daily note integration",
   "plugin.author": "Danny McClelland",
   "plugin.url": "https://github.com/dannymcc/Granola-to-NotePlan",
