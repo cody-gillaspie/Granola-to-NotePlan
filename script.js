@@ -1,4 +1,4 @@
-// Granola Sync for NotePlan v2.0.0
+// Granola Sync for NotePlan v2.1.0
 // Syncs Granola AI meeting notes into NotePlan
 
 // =============================================================================
@@ -22,12 +22,17 @@ var DEFAULTS = {
   enableGranolaFolders: false,
   enableDailyNoteIntegration: true,
   dailyNoteSectionName: '## Granola Meetings',
+  enableWeeklyNoteIntegration: false,
+  weeklyNoteSectionName: '## Granola Meetings',
+  enableMonthlyNoteIntegration: false,
+  monthlyNoteSectionName: '## Granola Meetings',
 };
 
 var BOOL_KEYS = [
   'skipExistingNotes', 'includeMyNotes', 'includeEnhancedNotes',
   'includeTranscript', 'includeAttendeeTags', 'enableGranolaFolders',
   'enableDailyNoteIntegration', 'includeGranolaUrl',
+  'enableWeeklyNoteIntegration', 'enableMonthlyNoteIntegration',
 ];
 
 function getSettings() {
@@ -397,11 +402,16 @@ function extractPanelContent(doc, panelType) {
   return null;
 }
 
-function buildNoteContent(doc, settings, transcript) {
+function buildNoteContent(doc, settings, transcript, calendarMatch) {
   var sections = [];
   var title = (doc.title || 'Untitled Granola Note').replace(/[<>:"/\\|?*]/g, '').trim();
 
   sections.push('# ' + title);
+
+  // Calendar event link
+  if (calendarMatch && calendarMatch.calendarItemLink) {
+    sections.push('\n[Calendar Event](' + calendarMatch.calendarItemLink + ')');
+  }
 
   // My Notes
   if (settings.includeMyNotes) {
@@ -611,6 +621,121 @@ function createOrUpdateNote(doc, content, settings, folderMap) {
 }
 
 // =============================================================================
+// CALENDAR EVENT MATCHING
+// =============================================================================
+
+function matchCalendarEvent(doc, calendarEvents) {
+  if (!calendarEvents || !Array.isArray(calendarEvents) || calendarEvents.length === 0) return null;
+  if (!doc.google_calendar_event) return null;
+
+  var gcalEvent = doc.google_calendar_event;
+  var gcalTitle = (gcalEvent.summary || '').toLowerCase().trim();
+  var gcalStart = gcalEvent.start && gcalEvent.start.dateTime ? new Date(gcalEvent.start.dateTime) : null;
+
+  if (!gcalTitle && !gcalStart) return null;
+
+  var TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
+
+  for (var i = 0; i < calendarEvents.length; i++) {
+    var event = calendarEvents[i];
+    var eventTitle = (event.title || '').toLowerCase().trim();
+    var eventDate = event.date ? new Date(event.date) : null;
+
+    // Match by title
+    var titleMatch = gcalTitle && eventTitle && (gcalTitle === eventTitle || eventTitle.indexOf(gcalTitle) !== -1 || gcalTitle.indexOf(eventTitle) !== -1);
+
+    // Match by start time (within tolerance)
+    var timeMatch = false;
+    if (gcalStart && eventDate) {
+      timeMatch = Math.abs(gcalStart.getTime() - eventDate.getTime()) <= TOLERANCE_MS;
+    }
+
+    // Require title match + time match for confidence, or exact title match alone
+    if (titleMatch && timeMatch) {
+      return event;
+    }
+    if (titleMatch && gcalTitle === eventTitle) {
+      return event;
+    }
+  }
+
+  return null;
+}
+
+// =============================================================================
+// CALENDAR NOTE HELPERS
+// =============================================================================
+
+function replaceSectionInNote(note, sectionName, sectionContent) {
+  var content = note.content || '';
+
+  // Escape section name for regex
+  var escaped = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  var sectionRegex = new RegExp('^' + escaped, 'm');
+
+  if (sectionRegex.test(content)) {
+    // Replace existing section (up to next heading or end of string)
+    var replaceRegex = new RegExp(escaped + '[\\s\\S]*?(?=\\n#{1,6}\\s|$)');
+    content = content.replace(replaceRegex, sectionContent);
+  } else {
+    // Append section
+    content += '\n\n' + sectionContent;
+  }
+
+  note.content = content;
+}
+
+function formatMeetingLine(note) {
+  var link = '[[' + note.filename + '|' + note.title + ']]';
+  return '- ' + note.time + ' ' + link;
+}
+
+var DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+var MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatDayHeading(date) {
+  return '### ' + DAY_NAMES[date.getDay()] + ' ' + date.getDate() + ' ' + MONTH_NAMES[date.getMonth()];
+}
+
+function buildGroupedByDayContent(notes, sectionName) {
+  // Sort by date then time
+  notes.sort(function(a, b) {
+    var dateComp = a.date.getTime() - b.date.getTime();
+    if (dateComp !== 0) return dateComp;
+    return a.time.localeCompare(b.time);
+  });
+
+  // Group by day
+  var days = [];
+  var currentDay = null;
+  var currentLines = [];
+
+  for (var i = 0; i < notes.length; i++) {
+    var dayStr = notes[i].date.toDateString();
+    if (dayStr !== currentDay) {
+      if (currentDay !== null) {
+        days.push({ date: currentDate, lines: currentLines });
+      }
+      currentDay = dayStr;
+      var currentDate = notes[i].date;
+      currentLines = [];
+    }
+    currentLines.push(formatMeetingLine(notes[i]));
+  }
+  if (currentDay !== null) {
+    days.push({ date: currentDate, lines: currentLines });
+  }
+
+  var parts = [sectionName];
+  for (var d = 0; d < days.length; d++) {
+    parts.push(formatDayHeading(days[d].date));
+    parts.push(days[d].lines.join('\n'));
+  }
+
+  return parts.join('\n');
+}
+
+// =============================================================================
 // DAILY NOTE
 // =============================================================================
 
@@ -635,31 +760,66 @@ function updateDailyNote(todaysNotes, settings) {
   // Sort by time
   todaysNotes.sort(function(a, b) { return a.time.localeCompare(b.time); });
 
-  // Build meeting list (NotePlan resolves wiki-links by filename alone)
   var meetingLines = todaysNotes.map(function(note) {
-    var link = '[[' + note.filename + '|' + note.title + ']]';
-    return '- ' + note.time + ' ' + link;
+    return formatMeetingLine(note);
   }).join('\n');
 
-  var sectionContent = sectionName + '\n' + meetingLines;
+  replaceSectionInNote(dailyNote, sectionName, sectionName + '\n' + meetingLines);
+  console.log('Granola Sync: Updated daily note with ' + todaysNotes.length + ' meeting(s)');
+}
 
-  var content = dailyNote.content || '';
+// =============================================================================
+// WEEKLY NOTE
+// =============================================================================
 
-  // Escape section name for regex
-  var escaped = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  var sectionRegex = new RegExp('^' + escaped, 'm');
+function updateWeeklyNote(thisWeeksNotes, settings) {
+  if (!settings.enableWeeklyNoteIntegration || thisWeeksNotes.length === 0) return;
 
-  if (sectionRegex.test(content)) {
-    // Replace existing section (up to next heading or end of string)
-    var replaceRegex = new RegExp(escaped + '[\\s\\S]*?(?=\\n#{1,6}\\s|$)');
-    content = content.replace(replaceRegex, sectionContent);
-  } else {
-    // Append section
-    content += '\n\n' + sectionContent;
+  var weeklyNote;
+  try {
+    weeklyNote = DataStore.calendarNoteByDate(new Date(), 'week');
+  } catch (e) {
+    console.log('Granola Sync: Could not access weekly note: ' + e.message);
+    return;
   }
 
-  dailyNote.content = content;
-  console.log('Granola Sync: Updated daily note with ' + todaysNotes.length + ' meeting(s)');
+  if (!weeklyNote) {
+    console.log('Granola Sync: No weekly note found');
+    return;
+  }
+
+  var sectionName = settings.weeklyNoteSectionName || '## Granola Meetings';
+  var sectionContent = buildGroupedByDayContent(thisWeeksNotes, sectionName);
+
+  replaceSectionInNote(weeklyNote, sectionName, sectionContent);
+  console.log('Granola Sync: Updated weekly note with ' + thisWeeksNotes.length + ' meeting(s)');
+}
+
+// =============================================================================
+// MONTHLY NOTE
+// =============================================================================
+
+function updateMonthlyNote(thisMonthsNotes, settings) {
+  if (!settings.enableMonthlyNoteIntegration || thisMonthsNotes.length === 0) return;
+
+  var monthlyNote;
+  try {
+    monthlyNote = DataStore.calendarNoteByDate(new Date(), 'month');
+  } catch (e) {
+    console.log('Granola Sync: Could not access monthly note: ' + e.message);
+    return;
+  }
+
+  if (!monthlyNote) {
+    console.log('Granola Sync: No monthly note found');
+    return;
+  }
+
+  var sectionName = settings.monthlyNoteSectionName || '## Granola Meetings';
+  var sectionContent = buildGroupedByDayContent(thisMonthsNotes, sectionName);
+
+  replaceSectionInNote(monthlyNote, sectionName, sectionContent);
+  console.log('Granola Sync: Updated monthly note with ' + thisMonthsNotes.length + ' meeting(s)');
 }
 
 // =============================================================================
@@ -730,7 +890,32 @@ async function runSync(syncAll) {
     var skipped = 0;
     var failed = 0;
     var todaysNotes = [];
-    var today = new Date().toDateString();
+    var thisWeeksNotes = [];
+    var thisMonthsNotes = [];
+    var now = new Date();
+    var today = now.toDateString();
+    var thisYear = now.getFullYear();
+    var thisMonth = now.getMonth();
+
+    // Week bounds: find start (Monday) and end (Sunday) of current week
+    var dayOfWeek = now.getDay();
+    var mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    var weekStart = new Date(thisYear, now.getMonth(), now.getDate() + mondayOffset);
+    weekStart.setHours(0, 0, 0, 0);
+    var weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    // Fetch calendar events for matching (on main thread)
+    var calendarEvents = null;
+    try {
+      await CommandBar.onMainThread();
+      calendarEvents = await Calendar.eventsBetween(weekStart, weekEnd);
+      await CommandBar.onAsyncThread();
+    } catch (e) {
+      console.log('Granola Sync: Could not fetch calendar events: ' + (e.message || e));
+      try { await CommandBar.onAsyncThread(); } catch (ignore) {}
+    }
 
     for (var i = 0; i < documents.length; i++) {
       var doc = documents[i];
@@ -755,7 +940,18 @@ async function runSync(syncAll) {
           continue;
         }
 
-        var content = buildNoteContent(doc, settings, transcript);
+        // Determine meeting time: prefer calendar event start over doc.created_at
+        var meetingTime;
+        if (doc.google_calendar_event && doc.google_calendar_event.start && doc.google_calendar_event.start.dateTime) {
+          meetingTime = new Date(doc.google_calendar_event.start.dateTime);
+        } else {
+          meetingTime = new Date(doc.created_at);
+        }
+
+        // Match to a NotePlan calendar event
+        var calendarMatch = matchCalendarEvent(doc, calendarEvents);
+
+        var content = buildNoteContent(doc, settings, transcript, calendarMatch);
 
         // Return to main thread for DataStore operations
         await CommandBar.onMainThread();
@@ -771,18 +967,28 @@ async function runSync(syncAll) {
         else if (result.action === 'updated') updated++;
         else if (result.action === 'skipped') skipped++;
 
-        // Collect today's notes for daily note
-        if (doc.created_at) {
-          var noteDate = new Date(doc.created_at).toDateString();
-          if (noteDate === today && result.action !== 'skipped') {
-            var createdDate = new Date(doc.created_at);
-            todaysNotes.push({
-              title: doc.title || 'Untitled Granola Note',
-              time: String(createdDate.getHours()).padStart(2, '0') + ':' + String(createdDate.getMinutes()).padStart(2, '0'),
-              filename: result.filename,
-              folder: result.folder,
-            });
-          }
+        // Collect notes for calendar note updates (include ALL synced docs, even skipped)
+        var noteEntry = {
+          title: doc.title || 'Untitled Granola Note',
+          time: String(meetingTime.getHours()).padStart(2, '0') + ':' + String(meetingTime.getMinutes()).padStart(2, '0'),
+          filename: result.filename,
+          folder: result.folder,
+          date: meetingTime,
+        };
+
+        // Daily: matches today
+        if (meetingTime.toDateString() === today) {
+          todaysNotes.push(noteEntry);
+        }
+
+        // Weekly: within current week bounds
+        if (meetingTime >= weekStart && meetingTime <= weekEnd) {
+          thisWeeksNotes.push(noteEntry);
+        }
+
+        // Monthly: same year and month
+        if (meetingTime.getFullYear() === thisYear && meetingTime.getMonth() === thisMonth) {
+          thisMonthsNotes.push(noteEntry);
         }
       } catch (err) {
         console.log('Granola Sync: Error processing "' + (doc.title || doc.id) + '": ' + (err.message || err));
@@ -795,8 +1001,10 @@ async function runSync(syncAll) {
     // Return to main thread for UI and DataStore operations
     await CommandBar.onMainThread();
 
-    // Update daily note
+    // Update calendar notes
     updateDailyNote(todaysNotes, settings);
+    updateWeeklyNote(thisWeeksNotes, settings);
+    updateMonthlyNote(thisMonthsNotes, settings);
 
     // Summary
     var parts = [];

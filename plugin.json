@@ -3,11 +3,11 @@
   "macOS.minVersion": "10.15.7",
   "iOS.minVersion": "14",
   "plugin.id": "granola.sync",
-  "plugin.name": "🥣 Granola Sync",
+  "plugin.name": "🔄 Granola Sync",
   "plugin.description": "Syncs Granola AI meeting notes into NotePlan with configurable content sections, attendee tags, and daily note integration",
   "plugin.author": "Danny McClelland",
   "plugin.url": "https://github.com/dannymcc/Granola-to-NotePlan",
-  "plugin.version": "2.0.0",
+  "plugin.version": "2.1.0",
   "plugin.script": "script.js",
   "plugin.commands": [
     {
@@ -148,7 +148,7 @@
     },
     {
       "type": "heading",
-      "title": "Daily Note Integration"
+      "title": "Calendar Note Integration"
     },
     {
       "type": "bool",
@@ -162,6 +162,34 @@
       "key": "dailyNoteSectionName",
       "title": "Daily Note Section Heading",
       "description": "Section heading for meetings in daily notes",
+      "default": "## Granola Meetings"
+    },
+    {
+      "type": "bool",
+      "key": "enableWeeklyNoteIntegration",
+      "title": "Enable Weekly Note Integration",
+      "description": "Add this week's synced meetings to your weekly note, grouped by day",
+      "default": false
+    },
+    {
+      "type": "string",
+      "key": "weeklyNoteSectionName",
+      "title": "Weekly Note Section Heading",
+      "description": "Section heading for meetings in weekly notes",
+      "default": "## Granola Meetings"
+    },
+    {
+      "type": "bool",
+      "key": "enableMonthlyNoteIntegration",
+      "title": "Enable Monthly Note Integration",
+      "description": "Add this month's synced meetings to your monthly note, grouped by day",
+      "default": false
+    },
+    {
+      "type": "string",
+      "key": "monthlyNoteSectionName",
+      "title": "Monthly Note Section Heading",
+      "description": "Section heading for meetings in monthly notes",
       "default": "## Granola Meetings"
     }
   ]

@@ -4,7 +4,7 @@
 
 A NotePlan plugin that syncs your [Granola AI](https://granola.ai) meeting notes into NotePlan with full customization options.
 
-![Granola Sync Plugin](https://img.shields.io/badge/NotePlan-Plugin-blue) ![Version](https://img.shields.io/badge/version-2.0.0-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Granola Sync Plugin](https://img.shields.io/badge/NotePlan-Plugin-blue) ![Version](https://img.shields.io/badge/version-2.1.0-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 > **Note:** This plugin was rebuilt from scratch in v2.0.0 based on the [Granola Sync Plus for Obsidian](https://github.com/dannymcc/Granola-to-Obsidian) plugin, adapted for NotePlan's sandboxed plugin environment.
 
@@ -107,12 +107,16 @@ Your Granola API access token. To find it:
 |---------|---------|-------------|
 | Mirror Granola Folders | `false` | Organise notes into subfolders matching your Granola folder structure |
 
-### Daily Note Integration
+### Calendar Note Integration
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Enable Daily Note Integration | `true` | Add today's meetings to your daily note |
 | Daily Note Section Heading | `## Granola Meetings` | Section heading used in daily notes |
+| Enable Weekly Note Integration | `false` | Add this week's meetings to your weekly note, grouped by day |
+| Weekly Note Section Heading | `## Granola Meetings` | Section heading used in weekly notes |
+| Enable Monthly Note Integration | `false` | Add this month's meetings to your monthly note, grouped by day |
+| Monthly Note Section Heading | `## Granola Meetings` | Section heading used in monthly notes |
 
 ## Usage
 
