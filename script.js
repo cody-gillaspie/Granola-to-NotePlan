@@ -5,7 +5,7 @@
 // SETTINGS HELPERS
 // =============================================================================
 
-const DEFAULTS = {
+var DEFAULTS = {
   granolaAccessToken: '',
   syncFolder: 'Granola',
   filenameTemplate: '{created_date}_{title}',
@@ -17,16 +17,29 @@ const DEFAULTS = {
   includeTranscript: false,
   includeAttendeeTags: false,
   excludeMyName: '',
+  attendeeTagTemplate: 'person/{name}',
+  includeGranolaUrl: false,
   enableGranolaFolders: false,
   enableDailyNoteIntegration: true,
   dailyNoteSectionName: '## Granola Meetings',
 };
 
+var BOOL_KEYS = [
+  'skipExistingNotes', 'includeMyNotes', 'includeEnhancedNotes',
+  'includeTranscript', 'includeAttendeeTags', 'enableGranolaFolders',
+  'enableDailyNoteIntegration', 'includeGranolaUrl',
+];
+
 function getSettings() {
-  const raw = DataStore.settings || {};
-  const s = {};
-  for (const key of Object.keys(DEFAULTS)) {
-    s[key] = raw[key] !== undefined && raw[key] !== null ? raw[key] : DEFAULTS[key];
+  var raw = DataStore.settings || {};
+  var s = {};
+  for (var k = 0; k < Object.keys(DEFAULTS).length; k++) {
+    var key = Object.keys(DEFAULTS)[k];
+    var val = raw[key] !== undefined && raw[key] !== null ? raw[key] : DEFAULTS[key];
+    if (BOOL_KEYS.indexOf(key) !== -1) {
+      val = val === true || val === 'true';
+    }
+    s[key] = val;
   }
   return s;
 }
@@ -36,8 +49,8 @@ function getSettings() {
 // =============================================================================
 
 function loadToken() {
-  const s = getSettings();
-  const token = (s.granolaAccessToken || '').trim();
+  var s = getSettings();
+  var token = (s.granolaAccessToken || '').trim();
   if (!token) {
     console.log('Granola Sync: No access token configured. Add it in plugin settings.');
     return null;
@@ -46,23 +59,31 @@ function loadToken() {
 }
 
 async function fetchApi(url, token, body) {
-  const headers = {
+  var headers = {
     Authorization: 'Bearer ' + token,
     'Content-Type': 'application/json',
     'User-Agent': 'Granola/5.354.0',
     'X-Client-Version': '5.354.0',
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: headers,
-    body: JSON.stringify(body),
-  });
+  var text;
+  try {
+    text = await fetch(url, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    console.log('Granola Sync: Fetch failed for ' + url + ': ' + e);
+    return null;
+  }
 
-  // NotePlan fetch may return string body directly instead of Response object
-  const text = typeof res === 'string' ? res : await res.text();
+  if (!text || typeof text !== 'string') {
+    console.log('Granola Sync: Empty response from ' + url);
+    return null;
+  }
 
-  let data;
+  var data;
   try {
     data = JSON.parse(text);
   } catch (e) {
@@ -79,14 +100,14 @@ async function fetchApi(url, token, body) {
 }
 
 async function fetchDocuments(token, limit) {
-  const allDocs = [];
-  let offset = 0;
-  const batchSize = 100;
-  let hasMore = true;
-  const maxDocs = limit || Number.MAX_SAFE_INTEGER;
+  var allDocs = [];
+  var offset = 0;
+  var batchSize = 100;
+  var hasMore = true;
+  var maxDocs = limit || Number.MAX_SAFE_INTEGER;
 
   while (hasMore && allDocs.length < maxDocs) {
-    const data = await fetchApi('https://api.granola.ai/v2/get-documents', token, {
+    var data = await fetchApi('https://api.granola.ai/v2/get-documents', token, {
       limit: batchSize,
       offset: offset,
       include_last_viewed_panel: true,
@@ -114,7 +135,7 @@ async function fetchDocuments(token, limit) {
 }
 
 async function fetchFolders(token) {
-  const data = await fetchApi('https://api.granola.ai/v1/get-document-lists-metadata', token, {
+  var data = await fetchApi('https://api.granola.ai/v1/get-document-lists-metadata', token, {
     include_document_ids: true,
     include_only_joined_lists: false,
   });
@@ -124,10 +145,12 @@ async function fetchFolders(token) {
 }
 
 async function fetchTranscript(token, docId) {
-  const data = await fetchApi('https://api.granola.ai/v1/get-document-transcript', token, {
+  var data = await fetchApi('https://api.granola.ai/v1/get-document-transcript', token, {
     document_id: docId,
   });
-  return data;
+  if (!data) return null;
+  // API returns { segments: [...] } — extract the array
+  return data.segments || data;
 }
 
 // =============================================================================
@@ -142,18 +165,18 @@ function convertProseMirrorToMarkdown(content) {
   function processNode(node, indentLevel) {
     if (!node || typeof node !== 'object') return '';
 
-    const type = node.type || '';
-    const children = node.content || [];
-    const text = node.text || '';
+    var type = node.type || '';
+    var children = node.content || [];
+    var text = node.text || '';
 
     switch (type) {
       case 'heading': {
-        const level = (node.attrs && node.attrs.level) || 1;
-        const inner = children.map(function(c) { return processNode(c, indentLevel); }).join('');
+        var level = (node.attrs && node.attrs.level) || 1;
+        var inner = children.map(function(c) { return processNode(c, indentLevel); }).join('');
         return '#'.repeat(level) + ' ' + inner + '\n\n';
       }
       case 'paragraph': {
-        const inner = children.map(function(c) { return processNode(c, indentLevel); }).join('');
+        var inner = children.map(function(c) { return processNode(c, indentLevel); }).join('');
         return inner + '\n\n';
       }
       case 'bulletList': {
@@ -415,8 +438,16 @@ function buildNoteContent(doc, settings, transcript) {
     }
   }
 
+  // Granola URL
+  if (settings.includeGranolaUrl) {
+    sections.push('\n[Open in Granola](https://notes.granola.ai/d/' + doc.id + ')');
+  }
+
   // Granola ID tracking via HTML comment
   var meta = '\n<!-- granola_id: ' + doc.id + ' -->';
+  if (doc.created_at) {
+    meta += '\n<!-- granola_created_at: ' + doc.created_at + ' -->';
+  }
   if (doc.updated_at) {
     meta += '\n<!-- granola_updated_at: ' + doc.updated_at + ' -->';
   }
@@ -499,10 +530,11 @@ function extractAttendees(doc, settings) {
 
   if (names.length === 0) return null;
 
-  // Format as hashtags
+  // Format as hashtags using configurable template
+  var template = settings.attendeeTagTemplate || 'person/{name}';
   var tags = names.map(function(name) {
     var clean = name.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase();
-    return '#person/' + clean;
+    return '#' + template.replace(/\{name\}/g, clean);
   });
 
   return tags.join(' ');
@@ -512,7 +544,7 @@ function extractAttendees(doc, settings) {
 // NOTE MANAGEMENT
 // =============================================================================
 
-function findExistingNote(granolaId, folder) {
+function findExistingNote(granolaId) {
   var allNotes = DataStore.projectNotes || [];
   var marker = '<!-- granola_id: ' + granolaId + ' -->';
 
@@ -557,7 +589,7 @@ function createOrUpdateNote(doc, content, settings, folderMap) {
   var filename = generateFilename(doc, settings);
 
   // Check for existing note
-  var existing = findExistingNote(doc.id, folder);
+  var existing = findExistingNote(doc.id);
 
   if (existing) {
     if (settings.skipExistingNotes && !isNoteOutdated(existing, doc)) {
@@ -568,9 +600,9 @@ function createOrUpdateNote(doc, content, settings, folderMap) {
     return { action: 'updated', filename: filename, folder: folder };
   }
 
-  // Create new note
-  var note = DataStore.newNote(filename, folder, content);
-  if (note) {
+  // Create new note using newNoteWithContent(content, folder, filename)
+  var result = DataStore.newNoteWithContent(content, folder, filename);
+  if (result) {
     return { action: 'created', filename: filename, folder: folder };
   }
 
@@ -603,9 +635,9 @@ function updateDailyNote(todaysNotes, settings) {
   // Sort by time
   todaysNotes.sort(function(a, b) { return a.time.localeCompare(b.time); });
 
-  // Build meeting list
+  // Build meeting list (NotePlan resolves wiki-links by filename alone)
   var meetingLines = todaysNotes.map(function(note) {
-    var link = '[[' + note.folder + '/' + note.filename + '|' + note.title + ']]';
+    var link = '[[' + note.filename + '|' + note.title + ']]';
     return '- ' + note.time + ' ' + link;
   }).join('\n');
 
@@ -618,8 +650,8 @@ function updateDailyNote(todaysNotes, settings) {
   var sectionRegex = new RegExp('^' + escaped, 'm');
 
   if (sectionRegex.test(content)) {
-    // Replace existing section (up to next ## heading or end of file)
-    var replaceRegex = new RegExp(escaped + '[\\s\\S]*?(?=\\n##|$)', 'm');
+    // Replace existing section (up to next heading or end of string)
+    var replaceRegex = new RegExp(escaped + '[\\s\\S]*?(?=\\n#{1,6}\\s|$)');
     content = content.replace(replaceRegex, sectionContent);
   } else {
     // Append section
@@ -647,7 +679,7 @@ async function runSync(syncAll) {
     var settings = getSettings();
     var token = loadToken();
     if (!token) {
-      CommandBar.prompt('Granola Sync Error', 'No access token configured. Add your Granola token in plugin settings.');
+      await CommandBar.prompt('Granola Sync Error', 'No access token configured. Add your Granola token in plugin settings.');
       return;
     }
 
@@ -657,11 +689,11 @@ async function runSync(syncAll) {
     // Fetch documents
     var documents = await fetchDocuments(token, limit);
     if (!documents) {
-      CommandBar.prompt('Granola Sync Error', 'Failed to fetch documents from Granola. Check your access token.');
+      await CommandBar.prompt('Granola Sync Error', 'Failed to fetch documents from Granola. Check your access token.');
       return;
     }
     if (documents.length === 0) {
-      CommandBar.prompt('Granola Sync', 'No documents found in Granola.');
+      await CommandBar.prompt('Granola Sync', 'No documents found in Granola.');
       return;
     }
 
@@ -754,11 +786,60 @@ async function runSync(syncAll) {
     var summary = parts.length > 0 ? parts.join(', ') : 'no changes';
 
     console.log('Granola Sync: Complete — ' + summary);
-    CommandBar.prompt('Granola Sync Complete', summary);
+    await CommandBar.prompt('Granola Sync Complete', summary);
 
   } catch (error) {
     console.log('Granola Sync: Sync failed — ' + (error.message || error));
-    CommandBar.prompt('Granola Sync Error', 'Sync failed: ' + (error.message || error));
+    await CommandBar.prompt('Granola Sync Error', 'Sync failed: ' + (error.message || error));
+  }
+}
+
+// =============================================================================
+// DUPLICATE DETECTION
+// =============================================================================
+
+async function findGranolaDuplicates() {
+  var allNotes = DataStore.projectNotes || [];
+  var idMap = {};
+  var duplicateCount = 0;
+
+  for (var i = 0; i < allNotes.length; i++) {
+    var note = allNotes[i];
+    var content = note.content || '';
+    var match = content.match(/<!-- granola_id: (.+?) -->/);
+    if (!match) continue;
+
+    var granolaId = match[1];
+    if (!idMap[granolaId]) {
+      idMap[granolaId] = [];
+    }
+    idMap[granolaId].push(note.title || note.filename || 'Unknown');
+  }
+
+  var reportLines = [];
+  var keys = Object.keys(idMap);
+  for (var k = 0; k < keys.length; k++) {
+    var id = keys[k];
+    if (idMap[id].length > 1) {
+      duplicateCount++;
+      reportLines.push('Granola ID: ' + id);
+      for (var n = 0; n < idMap[id].length; n++) {
+        reportLines.push('  - ' + idMap[id][n]);
+      }
+      reportLines.push('');
+    }
+  }
+
+  if (duplicateCount === 0) {
+    await CommandBar.prompt('Granola Sync', 'No duplicate Granola notes found.');
+  } else {
+    var settings = getSettings();
+    var report = '# Granola Duplicate Notes Report\n\n';
+    report += 'Found ' + duplicateCount + ' Granola IDs with multiple notes:\n\n';
+    report += reportLines.join('\n');
+    report += '\n<!-- Generated by Granola Sync -->';
+    DataStore.newNoteWithContent(report, settings.syncFolder, 'Granola_Duplicates_Report');
+    await CommandBar.prompt('Granola Sync', 'Found ' + duplicateCount + ' duplicate(s). Report created in ' + settings.syncFolder + ' folder.');
   }
 }
 

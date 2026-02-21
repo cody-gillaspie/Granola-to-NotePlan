@@ -1,5 +1,5 @@
 {
-  "noteplan.minAppVersion": "3.0.21",
+  "noteplan.minAppVersion": "3.5.2",
   "macOS.minVersion": "10.15.7",
   "iOS.minVersion": "14",
   "plugin.id": "granola.sync",
@@ -11,14 +11,19 @@
   "plugin.script": "script.js",
   "plugin.commands": [
     {
-      "name": "syncGranolaNotes",
-      "description": "Sync recent notes from Granola AI",
+      "name": "Sync recent notes from Granola AI",
+      "description": "Sync recent Granola meeting notes (up to the configured limit)",
       "jsFunction": "syncGranolaNotes"
     },
     {
-      "name": "syncGranolaNotesAll",
-      "description": "Sync ALL historical notes from Granola AI (ignores sync limit)",
+      "name": "Sync ALL historical notes from Granola AI",
+      "description": "Sync all Granola meeting notes (ignores sync limit)",
       "jsFunction": "syncGranolaNotesAll"
+    },
+    {
+      "name": "Find duplicate Granola notes",
+      "description": "Scan your vault for notes with duplicate Granola IDs and generate a report",
+      "jsFunction": "findGranolaDuplicates"
     }
   ],
   "plugin.settings": [
@@ -99,6 +104,13 @@
       "default": false
     },
     {
+      "type": "bool",
+      "key": "includeGranolaUrl",
+      "title": "Include Granola URL",
+      "description": "Add a link back to the original Granola document in each synced note",
+      "default": false
+    },
+    {
       "type": "heading",
       "title": "Attendee Tags"
     },
@@ -106,7 +118,7 @@
       "type": "bool",
       "key": "includeAttendeeTags",
       "title": "Include Attendee Tags",
-      "description": "Add meeting attendees as #hashtags at the top of each note",
+      "description": "Add meeting attendees as #hashtags at the end of each note",
       "default": false
     },
     {
@@ -115,6 +127,13 @@
       "title": "Exclude My Name",
       "description": "Your name as it appears in Granola meetings (excluded from attendee tags). Leave empty to include everyone.",
       "default": ""
+    },
+    {
+      "type": "string",
+      "key": "attendeeTagTemplate",
+      "title": "Attendee Tag Template",
+      "description": "Template for attendee tags. Use {name} as the placeholder. Examples: person/{name}, people/{name}, attendee/{name}",
+      "default": "person/{name}"
     },
     {
       "type": "heading",
