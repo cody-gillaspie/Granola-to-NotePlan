@@ -12,12 +12,16 @@ var DEFAULTS = {
   dateFormat: 'YYYY-MM-DD',
   documentSyncLimit: '100',
   skipExistingNotes: true,
+  includeDateInTitle: true,
   includeMyNotes: true,
   includeEnhancedNotes: true,
   includeTranscript: false,
   includeAttendeeTags: false,
   excludeMyName: '',
+  excludeMyEmail: '',
   attendeeTagTemplate: 'person/{name}',
+  attendeeFormat: 'hashtags',
+  attendeePageFolder: 'People',
   includeGranolaUrl: false,
   enableGranolaFolders: false,
   enableDailyNoteIntegration: true,
@@ -29,7 +33,7 @@ var DEFAULTS = {
 };
 
 var BOOL_KEYS = [
-  'skipExistingNotes', 'includeMyNotes', 'includeEnhancedNotes',
+  'skipExistingNotes', 'includeDateInTitle', 'includeMyNotes', 'includeEnhancedNotes',
   'includeTranscript', 'includeAttendeeTags', 'enableGranolaFolders',
   'enableDailyNoteIntegration', 'includeGranolaUrl',
   'enableWeeklyNoteIntegration', 'enableMonthlyNoteIntegration',
@@ -402,9 +406,13 @@ function extractPanelContent(doc, panelType) {
   return null;
 }
 
-function buildNoteContent(doc, settings, transcript, calendarMatch) {
+function buildNoteContent(doc, settings, transcript, calendarMatch, meetingTime) {
   var sections = [];
   var title = (doc.title || 'Untitled Granola Note').replace(/[<>:"/\\|?*]/g, '').trim();
+
+  if (settings.includeDateInTitle && meetingTime) {
+    title = formatDate(meetingTime, settings.dateFormat) + ' - ' + title;
+  }
 
   sections.push('# ' + title);
 
@@ -440,11 +448,17 @@ function buildNoteContent(doc, settings, transcript, calendarMatch) {
     sections.push('\n## Transcript\n\n' + transcript);
   }
 
-  // Attendee tags
+  // Attendee tags / links
   if (settings.includeAttendeeTags) {
-    var tags = extractAttendees(doc, settings);
-    if (tags) {
-      sections.push('\n---\n' + tags);
+    var names = getAttendeeNames(doc, settings);
+    var attendeeStr = null;
+    if (settings.attendeeFormat === 'wiki-links') {
+      attendeeStr = formatAttendeeLinks(names);
+    } else {
+      attendeeStr = formatAttendeeTags(names, settings);
+    }
+    if (attendeeStr) {
+      sections.push('\n---\n' + attendeeStr);
     }
   }
 
@@ -494,60 +508,360 @@ function generateFilename(doc, settings) {
   return filename;
 }
 
-function extractAttendees(doc, settings) {
-  var names = [];
-  var seen = {};
+function getAttendeeNames(doc, settings) {
+  var attendees = [];    // array of {name, email, domain}
+  var seenEmail = {};    // key: lowercased email → true (primary dedup)
+  var seenCompact = {};  // key: lowercased name with spaces stripped → true (fallback dedup for no-email attendees)
 
-  function addName(name) {
-    if (!name) return;
-    var key = name.toLowerCase().trim();
-    if (seen[key]) return;
-    // Exclude user's own name
-    if (settings.excludeMyName && key === settings.excludeMyName.toLowerCase().trim()) return;
-    seen[key] = true;
-    names.push(name.trim());
+  // Collect all email→name mappings from every source first, so we can
+  // prefer the richest display name for each unique email address
+  var emailToName = {};  // lowercased email → best display name
+  var emailToPerson = {};
+
+  function collectSource(name, email) {
+    if (!email) return;
+    var key = email.toLowerCase().trim();
+    // Prefer names with spaces (real display names) over username-style
+    if (!emailToName[key] || (name && name.indexOf(' ') !== -1 && emailToName[key].indexOf(' ') === -1)) {
+      emailToName[key] = name || email.split('@')[0].replace(/[._]/g, ' ');
+    }
   }
 
-  // Extract from people array
+  if (doc.people && Array.isArray(doc.people)) {
+    for (var i = 0; i < doc.people.length; i++) {
+      var p = doc.people[i];
+      var pName = p.name || p.display_name || '';
+      if (!pName && p.details && p.details.person && p.details.person.name) {
+        var pn = p.details.person.name;
+        pName = pn.fullName || (pn.givenName && pn.familyName ? pn.givenName + ' ' + pn.familyName : pn.givenName) || '';
+      }
+      collectSource(pName, p.email);
+    }
+  }
+  if (doc.google_calendar_event && doc.google_calendar_event.attendees) {
+    var calAttendees = doc.google_calendar_event.attendees;
+    for (var i = 0; i < calAttendees.length; i++) {
+      var ca = calAttendees[i];
+      collectSource(ca.displayName, ca.email);
+    }
+  }
+
+  function formatDomain(rawDomain) {
+    if (!rawDomain) return '';
+    var dotIdx = rawDomain.lastIndexOf('.');
+    if (dotIdx <= 0) return rawDomain;
+    var domainName = rawDomain.substring(0, dotIdx);
+    var tld = rawDomain.substring(dotIdx);
+    return domainName.replace(/(?:^|[-_])(\w)/g, function(m, c) {
+      return m.slice(0, -1) + c.toUpperCase();
+    }).replace(/^\w/, function(c) { return c.toUpperCase(); }) + tld;
+  }
+
+  function addAttendee(name, email) {
+    var trimmedName = (name || '').trim();
+    var trimmedEmail = (email || '').toLowerCase().trim();
+
+    // If we have an email, use it as the canonical dedup key
+    if (trimmedEmail) {
+      if (seenEmail[trimmedEmail]) return;
+      seenEmail[trimmedEmail] = true;
+
+      // Use the best display name we found across all sources
+      var bestName = emailToName[trimmedEmail] || trimmedName || trimmedEmail.split('@')[0].replace(/[._]/g, ' ');
+
+      // Exclude user's own email/name
+      if (settings.excludeMyName) {
+        var myKey = settings.excludeMyName.toLowerCase().trim();
+        if (trimmedEmail === myKey || bestName.toLowerCase() === myKey ||
+            bestName.toLowerCase().replace(/\s+/g, '') === myKey.replace(/\s+/g, '')) return;
+      }
+      if (settings.excludeMyEmail && trimmedEmail === settings.excludeMyEmail.toLowerCase().trim()) return;
+
+      var domain = trimmedEmail.split('@')[1] || '';
+      attendees.push({ name: bestName, email: trimmedEmail, domain: formatDomain(domain) });
+      return;
+    }
+
+    // No email — fall back to compact name dedup
+    if (!trimmedName) return;
+    var compact = trimmedName.toLowerCase().replace(/\s+/g, '');
+    if (seenCompact[compact]) return;
+
+    if (settings.excludeMyName) {
+      var myKey = settings.excludeMyName.toLowerCase().trim();
+      if (trimmedName.toLowerCase() === myKey || compact === myKey.replace(/\s+/g, '')) return;
+    }
+
+    seenCompact[compact] = true;
+    attendees.push({ name: trimmedName, email: '', domain: '' });
+  }
+
+  // Process people array first (richer names)
   if (doc.people && Array.isArray(doc.people)) {
     for (var i = 0; i < doc.people.length; i++) {
       var person = doc.people[i];
-      if (person.name) {
-        addName(person.name);
-      } else if (person.display_name) {
-        addName(person.display_name);
-      } else if (person.details && person.details.person && person.details.person.name) {
+      var personName = person.name || person.display_name || '';
+      if (!personName && person.details && person.details.person && person.details.person.name) {
         var pn = person.details.person.name;
-        addName(pn.fullName || (pn.givenName && pn.familyName ? pn.givenName + ' ' + pn.familyName : pn.givenName));
-      } else if (person.email) {
-        addName(person.email.split('@')[0].replace(/[._]/g, ' '));
+        personName = pn.fullName || (pn.givenName && pn.familyName ? pn.givenName + ' ' + pn.familyName : pn.givenName) || '';
       }
+      addAttendee(personName, person.email);
     }
   }
 
-  // Extract from calendar event attendees
+  // Calendar attendees second — same emails already seen will be skipped
   if (doc.google_calendar_event && doc.google_calendar_event.attendees) {
-    var attendees = doc.google_calendar_event.attendees;
-    for (var i = 0; i < attendees.length; i++) {
-      var a = attendees[i];
-      if (a.displayName) {
-        addName(a.displayName);
-      } else if (a.email) {
-        addName(a.email.split('@')[0].replace(/[._]/g, ' '));
-      }
+    var calAtt = doc.google_calendar_event.attendees;
+    for (var i = 0; i < calAtt.length; i++) {
+      var a = calAtt[i];
+      addAttendee(a.displayName, a.email);
     }
   }
 
-  if (names.length === 0) return null;
+  return attendees;
+}
 
-  // Format as hashtags using configurable template
+function formatAttendeeTags(attendees, settings) {
+  if (attendees.length === 0) return null;
   var template = settings.attendeeTagTemplate || 'person/{name}';
-  var tags = names.map(function(name) {
+  var tags = attendees.map(function(att) {
+    var name = typeof att === 'string' ? att : att.name;
     var clean = name.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase();
     return '#' + template.replace(/\{name\}/g, clean);
   });
-
   return tags.join(' ');
+}
+
+// Group attendees by domain and format as wiki-links
+function formatAttendeeLinks(attendees) {
+  if (attendees.length === 0) return null;
+
+  // Group by domain
+  var groups = {};   // domain → [names]
+  var noDomain = []; // attendees without a domain
+  for (var i = 0; i < attendees.length; i++) {
+    var att = attendees[i];
+    var name = typeof att === 'string' ? att : att.name;
+    var domain = (typeof att === 'string' ? '' : att.domain) || '';
+    if (domain) {
+      if (!groups[domain]) groups[domain] = [];
+      groups[domain].push(name);
+    } else {
+      noDomain.push(name);
+    }
+  }
+
+  var lines = [];
+  // Sort domains alphabetically
+  var domains = Object.keys(groups).sort();
+  for (var d = 0; d < domains.length; d++) {
+    var dom = domains[d];
+    var names = groups[dom];
+    lines.push('**' + dom + '**');
+    for (var n = 0; n < names.length; n++) {
+      lines.push('[[' + names[n] + ']]');
+    }
+    lines.push(''); // blank line between groups
+  }
+
+  if (noDomain.length > 0) {
+    if (lines.length > 0) lines.push('**Other**');
+    for (var n = 0; n < noDomain.length; n++) {
+      lines.push('[[' + noDomain[n] + ']]');
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// =============================================================================
+// PERSON PAGE MANAGEMENT
+// =============================================================================
+
+// In-memory cache of person pages created during this sync run,
+// keyed by lowercase email. Stores the note reference so we can
+// update it even before DataStore.projectNotes refreshes.
+var _personPageCache = {};
+
+function resetPersonPageCache() {
+  _personPageCache = {};
+}
+
+// Find a person page by scanning for person_email in YAML frontmatter.
+// NotePlan hides frontmatter behind the collapsed PROPERTIES section.
+function findPersonPage(email, baseFolder) {
+  if (!email) return null;
+  var key = email.toLowerCase().trim();
+
+  // Check in-memory cache first
+  if (_personPageCache[key]) {
+    return _personPageCache[key];
+  }
+
+  // Match "person_email: x" inside frontmatter
+  var allNotes = DataStore.projectNotes || [];
+  for (var i = 0; i < allNotes.length; i++) {
+    var note = allNotes[i];
+    var fn = note.filename || '';
+    if (fn.indexOf(baseFolder + '/') === 0) {
+      var content = note.content || '';
+      // Check frontmatter block
+      if (content.indexOf('---') === 0) {
+        var endFm = content.indexOf('\n---', 3);
+        if (endFm !== -1) {
+          var frontmatter = content.substring(0, endFm);
+          if (frontmatter.indexOf('person_email: ' + key) !== -1) {
+            _personPageCache[key] = note;
+            return note;
+          }
+        }
+      }
+      // Also match old HTML comment style for migration
+      if (content.indexOf('<!-- person_email: ' + key + ' -->') !== -1) {
+        _personPageCache[key] = note;
+        return note;
+      }
+    }
+  }
+  return null;
+}
+
+// Fallback: find by filename for pages created before email tracking
+function findPersonPageByName(name, baseFolder) {
+  if (!name) return null;
+  var key = name.toLowerCase().trim();
+  var keyCompact = key.replace(/\s+/g, '');
+
+  var allNotes = DataStore.projectNotes || [];
+  for (var i = 0; i < allNotes.length; i++) {
+    var note = allNotes[i];
+    var fn = note.filename || '';
+    if (fn.indexOf(baseFolder + '/') === 0) {
+      var lastSlash = fn.lastIndexOf('/');
+      var basename = fn.substring(lastSlash + 1).replace(/\.(md|txt)$/i, '');
+      var baseKey = basename.toLowerCase().trim();
+      var baseCompact = baseKey.replace(/\s+/g, '');
+      if (baseKey === key || baseCompact === keyCompact) {
+        return note;
+      }
+    }
+  }
+  return null;
+}
+
+function appendMeetingToPersonPage(note, meetingEntry, meetingLine) {
+  var content = note.content || '';
+  // Check by title (used in wiki-link) or filename (legacy links)
+  if (content.indexOf('[[' + meetingEntry.title + ']]') !== -1) return;
+  if (content.indexOf(meetingEntry.filename) !== -1) return; // legacy check
+
+  var meetingsIdx = content.indexOf('## Meetings');
+  if (meetingsIdx !== -1) {
+    note.content = content.trimEnd() + '\n' + meetingLine;
+  } else {
+    note.content = content.trimEnd() + '\n\n## Meetings\n\n' + meetingLine;
+  }
+}
+
+// Migrate old HTML comment markers to frontmatter
+function migratePersonEmailMarker(note, email) {
+  var content = note.content || '';
+  var key = email.toLowerCase().trim();
+  var oldMarker = '<!-- person_email: ' + key + ' -->';
+  var hasFrontmatter = content.indexOf('---') === 0 && content.indexOf('\n---', 3) !== -1;
+  var hasOldMarker = content.indexOf(oldMarker) !== -1;
+
+  // Already has frontmatter with person_email — nothing to do
+  if (hasFrontmatter) {
+    var endFm = content.indexOf('\n---', 3);
+    var fm = content.substring(0, endFm);
+    if (fm.indexOf('person_email:') !== -1) {
+      // Just strip the old HTML comment if present
+      if (hasOldMarker) {
+        note.content = content.replace(oldMarker, '').replace(/\n{3,}/g, '\n\n').trimEnd();
+      }
+      return;
+    }
+  }
+
+  // Add frontmatter
+  if (hasFrontmatter) {
+    // Append to existing frontmatter
+    var endFm = content.indexOf('\n---', 3);
+    note.content = content.substring(0, endFm) + '\nperson_email: ' + key + content.substring(endFm);
+  } else {
+    // Create new frontmatter block
+    note.content = '---\nperson_email: ' + key + '\n---\n' + content;
+  }
+
+  // Strip old HTML comment marker
+  if (hasOldMarker) {
+    note.content = note.content.replace(oldMarker, '').replace(/\n{3,}/g, '\n\n').trimEnd();
+  }
+}
+
+function createOrUpdatePersonPage(attendee, meetingEntry, settings) {
+  var name = typeof attendee === 'string' ? attendee : attendee.name;
+  var email = typeof attendee === 'string' ? '' : (attendee.email || '');
+  var domain = typeof attendee === 'string' ? '' : (attendee.domain || '');
+
+  var baseFolder = settings.attendeePageFolder || 'People';
+  var folder = domain ? baseFolder + '/' + domain : baseFolder;
+
+  var meetingDate = formatDate(meetingEntry.date, settings.dateFormat);
+  // NotePlan resolves wiki-links by note title (# heading), not filename/path
+  var meetingLine = '- ' + meetingDate + ' ' + meetingEntry.time + ' [[' + meetingEntry.title + ']]';
+
+  // Primary lookup: find by email in frontmatter (or old HTML comment)
+  var existing = email ? findPersonPage(email, baseFolder) : null;
+
+  // Fallback: find by filename (handles pages created before email tracking)
+  if (!existing) {
+    existing = findPersonPageByName(name, baseFolder);
+    // If found by name, add/migrate email frontmatter
+    if (existing && email) {
+      migratePersonEmailMarker(existing, email);
+      _personPageCache[email.toLowerCase().trim()] = existing;
+    }
+  }
+
+  if (existing && !existing._placeholder) {
+    // Migrate old HTML markers to frontmatter on existing pages
+    if (email) migratePersonEmailMarker(existing, email);
+    appendMeetingToPersonPage(existing, meetingEntry, meetingLine);
+    return;
+  }
+
+  // Placeholder from earlier in this sync — try fresh DataStore scan
+  if (existing && existing._placeholder) {
+    var key = email.toLowerCase().trim();
+    var allNotes = DataStore.projectNotes || [];
+    for (var i = 0; i < allNotes.length; i++) {
+      var note = allNotes[i];
+      var content = note.content || '';
+      if (content.indexOf('person_email: ' + key) !== -1) {
+        _personPageCache[key] = note;
+        appendMeetingToPersonPage(note, meetingEntry, meetingLine);
+        return;
+      }
+    }
+    console.log('Granola Sync: Person page for "' + name + '" (' + email + ') was created but cannot be found for update, skipping');
+    return;
+  }
+
+  // Create new person page with email in frontmatter
+  var frontmatter = email ? '---\nperson_email: ' + email.toLowerCase().trim() + '\n---\n' : '';
+  var pageContent = frontmatter + '# ' + name + '\n\n## Notes\n\n\n\n## Meetings\n\n' + meetingLine;
+  DataStore.newNoteWithContent(pageContent, folder, name);
+
+  // Cache
+  if (email) {
+    var cacheKey = email.toLowerCase().trim();
+    var created = findPersonPage(email, baseFolder);
+    if (!created) {
+      _personPageCache[cacheKey] = { _placeholder: true, name: name, email: email };
+    }
+  }
 }
 
 // =============================================================================
@@ -581,10 +895,23 @@ function isNoteOutdated(note, doc) {
   return incoming > existing;
 }
 
+var MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
 function createOrUpdateNote(doc, content, settings, folderMap) {
   var folder = settings.syncFolder;
 
-  // Use Granola folder structure if enabled
+  // Organise into Year/Month subfolders based on meeting date
+  var meetingDate = doc.created_at ? new Date(doc.created_at) : null;
+  if (meetingDate && !isNaN(meetingDate.getTime())) {
+    var year = String(meetingDate.getFullYear());
+    var month = MONTH_NAMES[meetingDate.getMonth()];
+    folder = folder + '/' + year + '/' + month;
+  }
+
+  // Append Granola folder structure if enabled (nested inside Year/Month)
   if (settings.enableGranolaFolders && folderMap && folderMap[doc.id]) {
     var granolaFolder = folderMap[doc.id];
     if (granolaFolder.title) {
@@ -603,7 +930,7 @@ function createOrUpdateNote(doc, content, settings, folderMap) {
 
   if (existing) {
     if (settings.skipExistingNotes && !isNoteOutdated(existing, doc)) {
-      return { action: 'skipped', filename: filename, folder: folder };
+      return { action: 'skipped_current', filename: filename, folder: folder };
     }
     // Update existing note
     existing.content = content;
@@ -686,7 +1013,8 @@ function replaceSectionInNote(note, sectionName, sectionContent) {
 }
 
 function formatMeetingLine(note) {
-  var link = '[[' + note.filename + '|' + note.title + ']]';
+  // NotePlan resolves wiki-links by note title (# heading), not filename/path
+  var link = '[[' + note.title + ']]';
   return '- ' + note.time + ' ' + link;
 }
 
@@ -843,6 +1171,7 @@ async function runSync(syncAll) {
       return;
     }
 
+    resetPersonPageCache();
     var limit = syncAll ? null : parseInt(settings.documentSyncLimit) || 100;
     console.log('Granola Sync: Starting sync' + (syncAll ? ' (all historical)' : ' (limit: ' + limit + ')') + '...');
 
@@ -887,7 +1216,8 @@ async function runSync(syncAll) {
 
     var created = 0;
     var updated = 0;
-    var skipped = 0;
+    var skippedEmpty = 0;   // no content (no notes, no enhanced, no transcript)
+    var skippedCurrent = 0; // already up-to-date
     var failed = 0;
     var todaysNotes = [];
     var thisWeeksNotes = [];
@@ -936,7 +1266,8 @@ async function runSync(syncAll) {
         var hasTranscript = settings.includeTranscript && transcript;
 
         if (!hasMyNotes && !hasEnhanced && !hasTranscript) {
-          skipped++;
+          skippedEmpty++;
+          console.log('Granola Sync: Skipped (no content): ' + (doc.title || doc.id));
           continue;
         }
 
@@ -951,7 +1282,7 @@ async function runSync(syncAll) {
         // Match to a NotePlan calendar event
         var calendarMatch = matchCalendarEvent(doc, calendarEvents);
 
-        var content = buildNoteContent(doc, settings, transcript, calendarMatch);
+        var content = buildNoteContent(doc, settings, transcript, calendarMatch, meetingTime);
 
         // Return to main thread for DataStore operations
         await CommandBar.onMainThread();
@@ -965,16 +1296,40 @@ async function runSync(syncAll) {
 
         if (result.action === 'created') created++;
         else if (result.action === 'updated') updated++;
-        else if (result.action === 'skipped') skipped++;
+        else if (result.action === 'skipped_current') {
+          skippedCurrent++;
+          console.log('Granola Sync: Skipped (unchanged): ' + (doc.title || doc.id));
+        }
 
         // Collect notes for calendar note updates (include ALL synced docs, even skipped)
+        var displayTitle = doc.title || 'Untitled Granola Note';
+        if (settings.includeDateInTitle && meetingTime) {
+          displayTitle = formatDate(meetingTime, settings.dateFormat) + ' - ' + displayTitle;
+        }
         var noteEntry = {
-          title: doc.title || 'Untitled Granola Note',
+          title: displayTitle,
           time: String(meetingTime.getHours()).padStart(2, '0') + ':' + String(meetingTime.getMinutes()).padStart(2, '0'),
           filename: result.filename,
           folder: result.folder,
           date: meetingTime,
         };
+
+        // Create/update person pages for attendees (wiki-links mode only)
+        if (settings.includeAttendeeTags && settings.attendeeFormat === 'wiki-links') {
+          var docAttendees = getAttendeeNames(doc, settings);
+          if (docAttendees.length > 0) {
+            await CommandBar.onMainThread();
+            for (var j = 0; j < docAttendees.length; j++) {
+              try {
+                createOrUpdatePersonPage(docAttendees[j], noteEntry, settings);
+              } catch (personErr) {
+                var errName = docAttendees[j].name || docAttendees[j];
+                console.log('Granola Sync: Error creating person page for "' + errName + '": ' + (personErr.message || personErr));
+              }
+            }
+            await CommandBar.onAsyncThread();
+          }
+        }
 
         // Daily: matches today
         if (meetingTime.toDateString() === today) {
@@ -1010,7 +1365,8 @@ async function runSync(syncAll) {
     var parts = [];
     if (created > 0) parts.push(created + ' created');
     if (updated > 0) parts.push(updated + ' updated');
-    if (skipped > 0) parts.push(skipped + ' skipped');
+    if (skippedCurrent > 0) parts.push(skippedCurrent + ' unchanged');
+    if (skippedEmpty > 0) parts.push(skippedEmpty + ' empty (no notes/transcript)');
     if (failed > 0) parts.push(failed + ' failed');
     var summary = parts.length > 0 ? parts.join(', ') : 'no changes';
 

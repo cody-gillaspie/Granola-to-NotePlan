@@ -79,6 +79,13 @@
       "default": true
     },
     {
+      "type": "bool",
+      "key": "includeDateInTitle",
+      "title": "Include Date in Title",
+      "description": "Append the meeting date to the note title (e.g. 'Team Standup - 2026-03-26'). Uses your Date Format setting.",
+      "default": true
+    },
+    {
       "type": "heading",
       "title": "Note Content"
     },
@@ -130,10 +137,31 @@
     },
     {
       "type": "string",
+      "key": "excludeMyEmail",
+      "title": "Exclude My Email",
+      "description": "Your email address (excluded from attendee person pages). Leave empty to include everyone.",
+      "default": ""
+    },
+    {
+      "type": "string",
       "key": "attendeeTagTemplate",
       "title": "Attendee Tag Template",
-      "description": "Template for attendee tags. Use {name} as the placeholder. Examples: person/{name}, people/{name}, attendee/{name}",
+      "description": "Template for attendee tags (used in hashtags mode). Use {name} as the placeholder. Examples: person/{name}, people/{name}, attendee/{name}",
       "default": "person/{name}"
+    },
+    {
+      "type": "string",
+      "key": "attendeeFormat",
+      "title": "Attendee Format",
+      "description": "How to display attendees in meeting notes. 'hashtags' uses #tags (e.g. #person/john-smith). 'wiki-links' uses [[Name]] links and creates person pages with meeting backlinks.",
+      "default": "hashtags"
+    },
+    {
+      "type": "string",
+      "key": "attendeePageFolder",
+      "title": "Attendee Page Folder",
+      "description": "Folder for attendee person pages (only used in wiki-links mode)",
+      "default": "People"
     },
     {
       "type": "heading",
